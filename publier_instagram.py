@@ -49,9 +49,9 @@ DEPOT_PUBLIC = "adelbadsi0-afk/ak-ugc-instagram"
 VISUELS_URL = f"https://raw.githubusercontent.com/{DEPOT_PUBLIC}/main/visuels"
 JOURS_REPONSES = 7   # Meta n'autorise la réponse privée que dans les 7 jours suivant le commentaire
 REPONSES_PUBLIQUES = [
-    "C'est dans tes messages 💌",
-    "Envoyé en message ✨",
-    "Regarde tes messages 📩 (ou tes demandes de message)",
+    "C'est dans tes messages 💌 Abonne-toi pour ne rien rater de la suite !",
+    "Envoyé en message ✨ (pas reçu ? regarde dans tes demandes de message)",
+    "Regarde tes messages 📩 Et abonne-toi pour la suite du Labo !",
     "C'est parti dans tes messages 💌",
 ]
 
