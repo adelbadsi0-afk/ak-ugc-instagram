@@ -43,6 +43,8 @@ JOURNAL = ICI / "publications-instagram.json"
 PARIS = ZoneInfo("Europe/Paris")
 
 API = "https://graph.instagram.com/v24.0"
+API_FACEBOOK = "https://graph.facebook.com/v24.0"
+COMPTE_IG = "17841425354766178"   # identifiant (public) du compte @ak.ugcagency, vu dans l'app Meta
 DEPOT_PUBLIC = "adelbadsi0-afk/ak-ugc-instagram"
 VISUELS_URL = f"https://raw.githubusercontent.com/{DEPOT_PUBLIC}/main/visuels"
 JOURS_REPONSES = 7   # Meta n'autorise la réponse privée que dans les 7 jours suivant le commentaire
@@ -126,9 +128,15 @@ def jeton():
     return env("INSTAGRAM_ACCESS_TOKEN")
 
 
+def api():
+    """Jeton « Instagram » (IGAA…) -> graph.instagram.com ; jeton « Facebook / connexion unifiée » (EAA…)
+    -> graph.facebook.com. Les adresses des appels sont les mêmes sur les deux."""
+    return API if jeton().startswith("IG") else API_FACEBOOK
+
+
 def appel(methode, chemin, quoi, **params):
     """Appel à l'API ; le jeton passe dans l'en-tête (jamais dans l'adresse, ni dans les journaux)."""
-    r = requests.request(methode, f"{API}/{chemin}", headers={"Authorization": f"Bearer {jeton()}"},
+    r = requests.request(methode, f"{api()}/{chemin}", headers={"Authorization": f"Bearer {jeton()}"},
                          timeout=60, **params)
     if r.status_code >= 300:
         try:
@@ -136,8 +144,17 @@ def appel(methode, chemin, quoi, **params):
             detail = f"{err.get('code')} / {err.get('error_subcode')} : {err.get('message')}"
         except ValueError:
             detail = r.text[:300]
-        raise RuntimeError(f"{quoi} : erreur {r.status_code} ({detail})")
+        raise RuntimeError(f"{quoi} : erreur {r.status_code} ({masquer(detail)})")
     return r.json()
+
+
+def masquer(texte):
+    """Retire tout ce qui ressemble à un jeton d'un message (Meta recopie parfois le jeton dans ses erreurs)."""
+    texte = str(texte)
+    tok = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
+    if tok:
+        texte = texte.replace(tok, "[jeton masqué]")
+    return re.sub(r"\b(EAA|IGAA|IGQ)[A-Za-z0-9_\-]{20,}", "[jeton masqué]", texte)
 
 
 def attendre_conteneur(cid, quoi):
@@ -258,7 +275,7 @@ def tous(chemin, quoi, params):
 
 def repondre(essai=False):
     ig = env("INSTAGRAM_USER_ID")
-    moi = appel("GET", "me", "Compte", params={"fields": "username"}).get("username", "")
+    moi = appel("GET", ig, "Compte", params={"fields": "username"}).get("username", "")
     messages = {str(n): j for n, j in lire_csv().items()}
     limite = datetime.now(PARIS) - timedelta(days=JOURS_REPONSES)
     envoyes = 0
@@ -295,19 +312,36 @@ def repondre(essai=False):
 
 # ------------------------------------------------------------------ jeton (en local)
 def saisir_jeton():
-    """Demande le jeton (collage masqué), le vérifie et l'écrit dans .env, sans jamais l'afficher."""
-    import getpass
-    print("Colle le jeton Instagram (clic droit ou Ctrl+V), puis Entrée. Rien ne s'affiche, c'est normal.")
-    v = getpass.getpass("Jeton : ").strip()
-    if len(v) < 50 or " " in v:
-        sys.exit("Ça ne ressemble pas à un jeton Instagram. Recommence.")
+    """Lit le jeton dans le presse-papiers (copié avec le bouton « Copier » de Meta), le vérifie,
+    l'écrit dans .env puis vide le presse-papiers. Le jeton n'est jamais affiché."""
+    import tkinter
+    input("Clique sur « Copier » à côté du jeton dans Meta, puis reviens ici et appuie sur Entrée. ")
+    racine = tkinter.Tk()
+    racine.withdraw()
+    try:
+        v = racine.clipboard_get().strip()
+    except tkinter.TclError:
+        v = ""
+    # si le jeton a été copié plusieurs fois d'affilée, on n'en garde qu'un
+    m = re.fullmatch(r"(.+?)\1+", v)
+    if m:
+        v = m.group(1)
+    if len(v) < 50 or re.search(r"\s", v) or not re.fullmatch(r"[A-Za-z0-9_\-]+", v):
+        racine.destroy()
+        sys.exit("Le presse-papiers ne contient pas de jeton. Clique sur « Copier » dans Meta et relance la commande.")
+    racine.clipboard_clear()   # on ne laisse pas le jeton traîner dans le presse-papiers
+    racine.update()
+    racine.destroy()
     os.environ["INSTAGRAM_ACCESS_TOKEN"] = v
     os.environ.pop("INSTAGRAM_TOKEN_EXPIRES", None)
-    info = appel("GET", "me", "Vérification du jeton", params={"fields": "user_id,username"})
-    expire = datetime.now(PARIS) + timedelta(days=59)
-    ecrire_env({"INSTAGRAM_ACCESS_TOKEN": v, "INSTAGRAM_USER_ID": info["user_id"],
-                "INSTAGRAM_TOKEN_EXPIRES": expire.isoformat(timespec="seconds")})
-    print(f"Connecté au compte @{info['username']}. Jeton enregistré dans .env (valable jusqu'au {expire:%d/%m/%Y} environ).")
+    info = appel("GET", COMPTE_IG, "Vérification du jeton", params={"fields": "username"})
+    if v.startswith("IG"):   # jeton Instagram : 60 jours, prolongeable
+        expire = (datetime.now(PARIS) + timedelta(days=59)).isoformat(timespec="seconds")
+        duree = f"valable jusqu'au {expire[8:10]}/{expire[5:7]}/{expire[:4]} environ"
+    else:                    # jeton de la connexion unifiée (utilisateur système) : sans expiration
+        expire, duree = "", "sans date d'expiration"
+    ecrire_env({"INSTAGRAM_ACCESS_TOKEN": v, "INSTAGRAM_USER_ID": COMPTE_IG, "INSTAGRAM_TOKEN_EXPIRES": expire})
+    print(f"Connecté au compte @{info['username']}. Jeton enregistré dans .env ({duree}).")
 
 
 def renouveler():
@@ -326,14 +360,19 @@ def renouveler():
 def secrets_github():
     gh = os.environ.get("GH_EXE", "gh")
     for cle in ("INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_USER_ID", "INSTAGRAM_TOKEN_EXPIRES"):
+        v = env(cle, obligatoire=cle != "INSTAGRAM_TOKEN_EXPIRES")
+        if not v:
+            subprocess.run([gh, "secret", "delete", cle, "--repo", DEPOT_PUBLIC], capture_output=True)
+            continue
         # valeur passée par l'entrée standard : jamais affichée ni visible dans la ligne de commande
-        subprocess.run([gh, "secret", "set", cle, "--repo", DEPOT_PUBLIC], input=env(cle), text=True, check=True)
+        subprocess.run([gh, "secret", "set", cle, "--repo", DEPOT_PUBLIC], input=v, text=True, check=True)
         log(f"Secret GitHub {cle} mis à jour")
 
 
 def statut():
     exp = env("INSTAGRAM_TOKEN_EXPIRES", obligatoire=False)
-    print("Jeton Instagram :", f"valable jusqu'au {exp[:10]}" if exp else "absent")
+    tok = env("INSTAGRAM_ACCESS_TOKEN", obligatoire=False)
+    print("Jeton Instagram :", "absent" if not tok else f"valable jusqu'au {exp[:10]}" if exp else "sans expiration")
     print("Aujourd'hui = jour", jour_d_aujourdhui(lire_csv()))
     for k, v in sorted(journal().items(), key=lambda x: int(x[0])):
         print(f"  jour {int(k):02d} publié le {v['date']} -> {v['url']}")
