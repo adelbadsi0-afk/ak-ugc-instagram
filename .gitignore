@@ -1,0 +1,3 @@
+# secrets : ne jamais publier
+.env
+__pycache__/

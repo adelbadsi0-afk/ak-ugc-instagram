@@ -1,0 +1,85 @@
+name: Instagram AK UGC
+
+on:
+  schedule:
+    # Publication à 18h30 Paris (= 17h30 UTC en hiver). GitHub démarre parfois en retard :
+    # on déclenche 3 fois (17h00, 17h15, 17h30 UTC) ; le script attend 18h30 pile s'il est en avance,
+    # et le journal empêche tout doublon.
+    - cron: "0 17 * * *"
+    - cron: "15 17 * * *"
+    - cron: "30 17 * * *"
+    # Réponses automatiques aux commentaires « mot-clé » : toutes les 15 minutes.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "publier ou repondre"
+        required: true
+        default: "repondre"
+        type: choice
+        options: [repondre, publier]
+      jour:
+        description: "Numéro du jour à publier (vide = jour de la date d'aujourd'hui)"
+        required: false
+
+permissions:
+  contents: write   # pour enregistrer publications-instagram.json (évite de publier deux fois)
+
+jobs:
+  publier:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule != '*/15 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'publier')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publication-instagram
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Publier sur Instagram
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_TOKEN_EXPIRES: ${{ secrets.INSTAGRAM_TOKEN_EXPIRES }}
+          JOUR: ${{ inputs.jour }}
+        run: |
+          if [ -n "$JOUR" ]; then
+            python publier_instagram.py publier --jour "$JOUR"
+          else
+            python publier_instagram.py publier --attendre
+          fi
+      - name: Enregistrer le journal des publications
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add publications-instagram.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Journal : publication du $(TZ=Europe/Paris date +%d/%m/%Y)"
+            git pull --rebase && git push
+          fi
+
+  repondre:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'repondre')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: reponses-instagram
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Répondre aux commentaires mot-clé
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_TOKEN_EXPIRES: ${{ secrets.INSTAGRAM_TOKEN_EXPIRES }}
+        run: python publier_instagram.py repondre
