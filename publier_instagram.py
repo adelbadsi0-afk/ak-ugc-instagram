@@ -122,7 +122,7 @@ def jeton():
     if exp:
         reste = (datetime.fromisoformat(exp) - datetime.now(PARIS)).days
         if reste < 0:
-            sys.exit("Le jeton Instagram a expiré : génère-en un nouveau (voir GUIDE-INSTAGRAM.md).")
+            sys.exit("Le jeton Instagram a expiré : génère-en un nouveau (voir instagram/GUIDE-INSTAGRAM.md).")
         if reste < 10:
             log(f"ATTENTION : le jeton Instagram expire dans {reste} jours (python publier_instagram.py renouveler).")
     return env("INSTAGRAM_ACCESS_TOKEN")
