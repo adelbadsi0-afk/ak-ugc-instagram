@@ -2,12 +2,11 @@ name: Instagram AK UGC
 
 on:
   schedule:
-    # Publication à 18h30 Paris (= 17h30 UTC en hiver). GitHub démarre parfois en retard :
-    # on déclenche 3 fois (17h00, 17h15, 17h30 UTC) ; le script attend 18h30 pile s'il est en avance,
-    # et le journal empêche tout doublon.
-    - cron: "0 17 * * *"
-    - cron: "15 17 * * *"
-    - cron: "30 17 * * *"
+    # Publication à 18h30 Paris : EN PAUSE depuis le 26/11/2026 (demande de Kamila, après le jour 8).
+    # Pour reprendre, retirer les « # » des 3 lignes ci-dessous (17h00, 17h15, 17h30 UTC).
+    # - cron: "0 17 * * *"
+    # - cron: "15 17 * * *"
+    # - cron: "30 17 * * *"
     # Réponses automatiques aux commentaires « mot-clé » : toutes les 15 minutes.
     - cron: "*/15 * * * *"
   workflow_dispatch:
